@@ -530,4 +530,10 @@ NSString* EntityNameFromClass(Class class) {
     return [[[self class] applicationDocumentsDirectory] URLByAppendingPathComponent:[self.dataModelName stringByAppendingString:@".sqlite"]];
 }
 
+- (void)setModelURL:(NSURL *)modelURL
+{
+    _modelURL = modelURL;
+    self.managedObjectModel = [[NSManagedObjectModel alloc] initWithContentsOfURL:modelURL];
+}
+
 @end

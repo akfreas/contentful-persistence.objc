@@ -83,6 +83,13 @@
  */
 @property (nonatomic, readonly) NSURL* storeURL;
 
+
+/**
+ URL of the managed object model used by the persistence manager.
+ 
+ */
+@property (nonatomic) NSURL *modelURL;
+
 /** Delete all managed objects from the persistent store. */
 -(void)deleteAll;
 
