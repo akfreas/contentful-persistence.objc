@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = "ContentfulPersistence"
-  s.version          = "0.2.1.0"
+  s.version          = "0.3.0"
   s.summary          = "Simplified persistence for the Contentful iOS SDK."
   s.homepage         = "https://github.com/akfreas/contentful-persistence.objc"
   s.license          = 'MIT'
@@ -21,5 +21,5 @@ Pod::Spec.new do |s|
 
   s.osx.deployment_target     = '10.8'
 
-  s.dependency 'ContentfulDeliveryAPI', '~> 1.8.1.0'
+  s.dependency 'ContentfulDeliveryAPI', '~> 1.9.0'
 end

@@ -13,6 +13,7 @@
 #import <ContentfulDeliveryAPI/CDAEntry.h>
 #import <ContentfulDeliveryAPI/CDAField.h>
 
+#import "CDAUtilities.h"
 #import "CoreDataManager.h"
 
 NSString* EntityNameFromClass(Class class) {
@@ -66,6 +67,15 @@ NSString* EntityNameFromClass(Class class) {
 }
 
 #pragma mark -
+
+- (id<CDAPersistedEntry>)createLocalizedPersistedEntryForContentTypeWithIdentifier:(NSString *)identifier {
+    Class entryClass = [self classForLocalizedEntriesOfContentTypeWithIdentifier:identifier];
+    if (!entryClass) {
+        return nil;
+    }
+    return [NSEntityDescription insertNewObjectForEntityForName:EntityNameFromClass(entryClass)
+                                         inManagedObjectContext:self.managedObjectContext];
+}
 
 - (id<CDAPersistedAsset>)createPersistedAsset
 {
@@ -135,6 +145,12 @@ NSString* EntityNameFromClass(Class class) {
     }
 }
 
+- (void)deleteLocalizedEntryWithIdentifier:(NSString *)identifier {
+    for (NSManagedObject* entry in [self fetchLocalizedEntriesWithIdentifier:identifier]) {
+        [self.managedObjectContext deleteObject:entry];
+    }
+}
+
 - (void)enumerateMappedFieldsForContentTypeWithIdentifier:(NSString*)identifier mapping:(NSDictionary*)mapping usingBlock:(void (^)(CDAContentType* contentType, CDAField* field, NSString* keyPath))block {
     NSParameterAssert(block);
 
@@ -148,7 +164,9 @@ NSString* EntityNameFromClass(Class class) {
         [self.client fetchContentTypeWithIdentifier:identifier success:^(CDAResponse *response,
                                                                          CDAContentType *contentType) {
             CDAField* field = [contentType fieldForIdentifier:key[1]];
-            block(contentType, field, keyPath);
+            if (field) {
+                block(contentType, field, keyPath);
+            }
         } failure:nil];
     }
 }
@@ -208,6 +226,9 @@ NSString* EntityNameFromClass(Class class) {
 {
     NSFetchRequest *request = [self fetchRequestForEntititiesOfClass:class
                                                    matchingPredicate:predicateString];
+    if (!request) {
+        return nil;
+    }
     return [self.managedObjectContext executeFetchRequest:request error:error];
 }
 
@@ -248,6 +269,33 @@ NSString* EntityNameFromClass(Class class) {
     return [[self fetchEntriesMatchingPredicate:predicate] firstObject];
 }
 
+- (NSArray*)fetchLocalizedEntriesWithIdentifier:(NSString *)identifier {
+    NSString* predicate = [NSString stringWithFormat:@"identifier == '%@'", identifier];
+
+    NSError* error;
+    NSArray* entries = [self fetchEntititiesOfClass:[self classForLocalizedEntriesOfContentTypeWithIdentifier:identifier] matchingPredicate:predicate error:&error];
+
+    if (!entries) {
+        NSLog(@"Could not fetch entries: %@", error);
+    }
+
+    return entries;
+}
+
+- (id<CDALocalizedPersistedEntry>)fetchLocalizedEntryWithIdentifier:(NSString *)identifier
+                                                             locale:(NSString *)locale {
+    NSString* predicate = [NSString stringWithFormat:@"identifier == '%@' AND locale == '%@'", identifier, locale];
+
+    NSError* error;
+    NSArray* entries = [self fetchEntititiesOfClass:[self classForLocalizedEntriesOfContentTypeWithIdentifier:identifier] matchingPredicate:predicate error:&error];
+
+    if (!entries) {
+        NSLog(@"Could not fetch entries: %@", error);
+    }
+
+    return entries.firstObject;
+}
+
 - (NSFetchRequest *)fetchRequestForEntititiesOfClass:(Class)class
                                    matchingPredicate:(NSString*)predicateString
 {
@@ -256,6 +304,9 @@ NSString* EntityNameFromClass(Class class) {
     NSFetchRequest *request = [NSFetchRequest new];
 
     NSEntityDescription *entityDescription = [self entityDescriptionForClass:class];
+    if (!entityDescription) {
+        return nil;
+    }
     [request setEntity:entityDescription];
     
     if (predicateString) {
@@ -454,10 +505,13 @@ NSString* EntityNameFromClass(Class class) {
         id relationshipTarget = [entry valueForKeyPath:entryKeyPath];
 
         if (!relationshipTarget) {
+            [(NSObject*)persistedEntry setValue:nil forKey:relationshipName];
             return;
         }
 
         if ([relationshipTarget isKindOfClass:[NSArray class]]) {
+            NSAssert(description.toMany, @"Relationship cardinality mismatch: to-one locally, but to-many on Contentful.");
+
 			if (description.isOrdered) {
 				relationshipTarget = [NSOrderedSet orderedSetWithArray:relationshipTarget];
 			} else {
@@ -466,6 +520,7 @@ NSString* EntityNameFromClass(Class class) {
         } else {
             NSAssert([relationshipTarget isKindOfClass:[CDAResource class]],
                      @"Relationship target ought to be a Resource.");
+            NSAssert(!description.toMany, @"Relationship cardinality mismatch: to-many locally, but to-one on Contentful.");
         }
         
         relationships[relationshipName] = relationshipTarget;
@@ -496,8 +551,16 @@ NSString* EntityNameFromClass(Class class) {
     if (_managedObjectModel != nil) {
         return _managedObjectModel;
     }
-    NSURL *modelURL = [[NSBundle mainBundle]
-                       URLForResource:self.dataModelName withExtension:@"momd"];
+
+    NSURL* modelURL = nil;
+    for (NSBundle* bundle in @[ [NSBundle mainBundle], [NSBundle bundleForClass:self.class] ]) {
+        modelURL = [bundle URLForResource:self.dataModelName withExtension:@"momd"];
+
+        if (modelURL) {
+            break;
+        }
+    }
+
     _managedObjectModel = [[NSManagedObjectModel alloc] initWithContentsOfURL:modelURL];
     return _managedObjectModel;
 }
